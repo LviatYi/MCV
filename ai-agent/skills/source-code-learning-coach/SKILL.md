@@ -36,7 +36,20 @@ The main agent should adhere to the following principles
 Activate this mode only when the user explicitly asks for subagents, delegated chapter teaching, parallel agent work, or
 a workflow where chapter details are handled by subagents.
 
-Subagent will drive the conversation according to the process defined below.
+Subagent will drive the chapter conversation according to the process defined below, but it must not complete the whole
+process in one response. Use a stepwise teaching contract:
+
+- Each subagent response covers exactly one current process item unless the user explicitly asks for a broader summary.
+- After finishing the current item, stop and wait for the user to discuss, challenge, ask follow-up questions, or request
+  the next item.
+- Advance to the next process item only when the user clearly says "下一步", "继续", "进入下一节", "next", or otherwise
+  explicitly asks to proceed.
+- The main agent stores the current chapter, current process item, resolved questions, and open questions after each
+  subagent response.
+- If the same subagent thread can continue, send it the next-step instruction plus the compressed progress. If not,
+  start a new subagent with the compressed progress and the next current item.
+
+The process items are:
 
 1. Plan the chapter
     - Define the chapter goal, prerequisites, expected outputs, and stopping point.
@@ -89,29 +102,35 @@ Main learning context:
 - Chapter goal: [what the learner should understand after this chapter].
 - Scope: [files/modules/concepts to inspect].
 - Out of scope: [side topics to avoid].
+- Current process item: [one item from the process list].
+- Progress so far: [compressed previous items, user questions, resolved points, open questions].
 
 Use the source-code-learning-coach method:
-1. Build a compact concept map.
-2. Locate the relevant source files and key types/functions.
-3. Trace one representative execution path. In particular, we should start by considering the official examples, and then select from the main test modules.
-4. Explain invariants and design intent.
-5. Summarize strengths and limitations.
-6. Invoke or apply the quiz-professor workflow to test understanding.
-6. Give beginner-friendly "what to remember" points.
+Follow only the current process item in this response.
+Do not run the whole chapter workflow in one answer.
+After completing the current item, stop at a checkpoint and wait for the user to explicitly request the next item.
 
-Return a compressed chapter report for the main agent:
-- Concept map summary. what the learner can now understand.
-- Learner progress update.
+For the current item, return:
+- Teaching response for the learner.
+- Source references if source was inspected.
+- Key points learned.
+- User-facing checkpoint question or invitation for clarification.
+- Compressed progress update for the main agent.
+- Recommended next process item, but do not execute it.
 ```
 
 ### Main Agent Integration
 
-After a subagent returns:
+After each subagent step returns:
 
 - Compress the result into the user's current learning state.
-- Present only the useful chapter explanation, not every internal search detail.
+- Present only the useful current-step explanation, not every internal search detail.
+- Preserve the current process item and the recommended next item.
+- Let the user discuss the current item freely before advancing.
+- Advance the chapter only after the user explicitly requests the next step.
 - Update notes if the user asked for persistent notes.
-- Choose the next chapter based on the returned `next`, the user's learning path, and the overall course goal.
+- At the end of the chapter, choose the next chapter based on the returned progress, the user's learning path, and the
+  overall course goal.
 
 ## Notes Workflow
 
