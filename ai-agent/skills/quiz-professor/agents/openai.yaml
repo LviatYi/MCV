@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quiz Professor"
+  short_description: "Design diagnostic quizzes"
+  default_prompt: "Use quiz-professor to create diagnostic questions that test understanding."
