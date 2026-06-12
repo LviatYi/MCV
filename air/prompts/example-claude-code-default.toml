@@ -1,0 +1,19 @@
+schema = "air.prompt-composition.v1"
+name = "claude-code-default"
+description = "Compose a default global prompt for Claude Code with shared and capability-specific layers."
+
+layers = [
+  "base-prompt.md",
+  "example-claude-code-agent-product-prompt.md",
+  "rg-capability-prompt.md",
+  "shell-capability-prompt.md",
+]
+
+[targets]
+product = "claude-code"
+scope = "global"
+
+[rules]
+format = "markdown-concatenate"
+separator = "\n\n"
+deduplicate_headings = false
