@@ -1,0 +1,3 @@
+instruction_layers = [
+  "rg-capability-prompt.md",
+]

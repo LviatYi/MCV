@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -56,17 +57,38 @@ struct ApplyArgs {
     dry_run: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct CompositionConfig {
-    schema: Option<String>,
-    name: String,
-    description: Option<String>,
+#[derive(Clone, Debug, Default, Deserialize)]
+struct LayerSelection {
+    #[serde(default)]
+    imports: Vec<String>,
     #[serde(default, alias = "layers")]
     instruction_layers: Vec<String>,
     #[serde(default)]
     skill_layers: Vec<String>,
-    targets: Targets,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct ConfigHeader {
+    #[serde(skip_deserializing)]
+    name: String,
+    schema: Option<String>,
+    description: Option<String>,
+    targets: Option<Targets>,
     rules: Option<Rules>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfigFile {
+    #[serde(flatten)]
+    header: ConfigHeader,
+    #[serde(flatten)]
+    layers: LayerSelection,
+}
+
+#[derive(Clone, Debug)]
+struct ResolvedConfig {
+    header: ConfigHeader,
+    layers: LayerSelection,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -154,7 +176,7 @@ impl From<Targets> for Scope {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 struct Rules {
     separator: Option<String>,
 }
@@ -162,53 +184,47 @@ struct Rules {
 fn apply(args: ApplyArgs) -> Result<()> {
     let config_path = fs::canonicalize(&args.config)
         .with_context(|| format!("failed to resolve config path: {}", args.config.display()))?;
-    let config_name = config_path.file_stem();
     let assets_dir = fs::canonicalize(&args.assets_dir).with_context(|| {
         format!(
             "failed to resolve assets directory: {}",
             args.assets_dir.display()
         )
     })?;
-    let raw = fs::read_to_string(&config_path)
-        .with_context(|| format!("failed to read config: {}", config_path.display()))?;
-    let mut config: CompositionConfig = toml::from_str(&raw)
-        .with_context(|| format!("failed to parse config: {}", config_path.display()))?;
-    config.name = config_name
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let config = load_resolved_config(&config_path)?;
 
     validate_config(&config)?;
 
+    let targets = config
+        .header
+        .targets
+        .as_ref()
+        .context("root config must declare [targets]")?;
     let scope = match args.workspace.clone() {
         Some(root) => Scope::Workspace(root),
-        None => Scope::from(config.targets.clone()),
+        None => Scope::from(targets.clone()),
     };
-    let instruction_output_path = if config.instruction_layers.is_empty() {
+    let instruction_output_path = if config.layers.instruction_layers.is_empty() {
         None
     } else {
-        Some(resolve_instruction_output_path(
-            &config.targets,
-            &scope,
-            &args,
-        )?)
+        Some(resolve_instruction_output_path(targets, &scope, &args)?)
     };
-    let skills_output_root = resolve_skills_output_root(&config.targets, &scope)?;
-    let instruction_content = if config.instruction_layers.is_empty() {
+    let skills_output_root = resolve_skills_output_root(targets, &scope)?;
+    let instruction_content = if config.layers.instruction_layers.is_empty() {
         None
     } else {
         Some(compose_instruction_layers(&config, &assets_dir)?)
     };
     let skills_root = assets_dir.join("skills");
-    let selected_skills = resolve_skill_sources(&config.skill_layers, &skills_root)?;
+    let selected_skills = resolve_skill_sources(&config.layers.skill_layers, &skills_root)?;
 
     if args.dry_run {
         println!("Config: {}", config_path.display());
         println!("Assets Dir: {}", assets_dir.display());
-        println!("Name: {}", config.name);
-        if let Some(description) = &config.description {
+        println!("Name: {}", config.header.name);
+        if let Some(description) = &config.header.description {
             println!("Description: {description}");
         }
-        println!("Product: {}", &config.targets.product.name());
+        println!("Product: {}", &targets.product.name());
         match (&instruction_content, &instruction_output_path) {
             (Some(content), Some(output_path)) => {
                 println!("Instruction Output: {}", output_path.display());
@@ -249,7 +265,7 @@ fn apply(args: ApplyArgs) -> Result<()> {
         })?;
         println!(
             "Wrote {} instruction to {}",
-            &config.targets.product.name(),
+            &targets.product.name(),
             instruction_output_path.display()
         );
     }
@@ -275,15 +291,19 @@ fn apply(args: ApplyArgs) -> Result<()> {
     Ok(())
 }
 
-fn validate_config(config: &CompositionConfig) -> Result<()> {
-    if config.instruction_layers.is_empty() && config.skill_layers.is_empty() {
+fn validate_config(config: &ResolvedConfig) -> Result<()> {
+    if config.layers.instruction_layers.is_empty() && config.layers.skill_layers.is_empty() {
         bail!(
             "config '{}' must declare at least one instruction_layers or skill_layers entry",
-            config.name
+            config.header.name
         );
     }
 
-    if let Some(schema) = &config.schema
+    if config.header.targets.is_none() {
+        bail!("config '{}' must declare [targets]", config.header.name);
+    }
+
+    if let Some(schema) = &config.header.schema
         && schema != "air.distribution.v1"
         && schema != "air.prompt-composition.v1"
     {
@@ -293,15 +313,16 @@ fn validate_config(config: &CompositionConfig) -> Result<()> {
     Ok(())
 }
 
-fn compose_instruction_layers(config: &CompositionConfig, assets_dir: &Path) -> Result<String> {
+fn compose_instruction_layers(config: &ResolvedConfig, assets_dir: &Path) -> Result<String> {
     let separator = config
+        .header
         .rules
         .as_ref()
         .and_then(|rules| rules.separator.clone())
         .unwrap_or_else(|| "\n\n".to_string());
 
-    let mut parts = Vec::with_capacity(config.instruction_layers.len());
-    for layer in &config.instruction_layers {
+    let mut parts = Vec::with_capacity(config.layers.instruction_layers.len());
+    for layer in &config.layers.instruction_layers {
         let layer_path = assets_dir.join("instructions").join(layer);
         if !layer_path.is_file() {
             warn(&format!(
@@ -317,7 +338,7 @@ fn compose_instruction_layers(config: &CompositionConfig, assets_dir: &Path) -> 
         parts.push(indent_markdown_headings(content.trim()));
     }
 
-    let mut combined = format!("# {}", config.name);
+    let mut combined = format!("# {}", config.header.name);
     if !parts.is_empty() {
         combined.push_str(&separator);
         combined.push_str(&parts.join(&separator));
@@ -378,6 +399,92 @@ fn home_dir() -> Result<PathBuf> {
 
 fn default_working_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn load_resolved_config(config_path: &Path) -> Result<ResolvedConfig> {
+    let root_file = load_config_file(config_path)?;
+
+    let mut visited = HashSet::new();
+    let mut visiting = Vec::new();
+    let mut layers =
+        resolve_imported_layers(config_path, &root_file.layers, &mut visited, &mut visiting)?;
+
+    layers.imports.clear();
+
+    Ok(ResolvedConfig {
+        header: root_file.header,
+        layers,
+    })
+}
+
+fn load_config_file(path: &Path) -> Result<ConfigFile> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read config: {}", path.display()))?;
+    let mut config: ConfigFile =
+        toml::from_str(&raw).with_context(|| format!("failed to parse config: {}", path.display()))?;
+    config.header.name = path
+        .file_stem()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    Ok(config)
+}
+
+fn resolve_imported_layers(
+    config_path: &Path,
+    root_layers: &LayerSelection,
+    visited: &mut HashSet<PathBuf>,
+    visiting: &mut Vec<PathBuf>,
+) -> Result<LayerSelection> {
+    let canonical = fs::canonicalize(config_path)
+        .with_context(|| format!("failed to resolve config path: {}", config_path.display()))?;
+
+    if visiting.contains(&canonical) {
+        warn(&format!(
+            "cyclic config import detected at {}, skipping this import edge",
+            canonical.display()
+        ));
+        return Ok(LayerSelection::default());
+    }
+
+    if !visited.insert(canonical.clone()) {
+        return Ok(LayerSelection::default());
+    }
+
+    visiting.push(canonical.clone());
+
+    let mut merged = LayerSelection::default();
+    let config_dir = canonical
+        .parent()
+        .context("config path does not have a parent directory")?;
+
+    for import in &root_layers.imports {
+        let import_path = config_dir.join(import);
+        if !import_path.exists() {
+            warn(&format!(
+                "import config '{}' is missing at {}, skipping",
+                import,
+                import_path.display()
+            ));
+            continue;
+        }
+
+        let imported_file = load_config_file(&import_path)?;
+        let imported_layers =
+            resolve_imported_layers(&import_path, &imported_file.layers, visited, visiting)?;
+        merged
+            .instruction_layers
+            .extend(imported_layers.instruction_layers);
+        merged.skill_layers.extend(imported_layers.skill_layers);
+    }
+
+    merged
+        .instruction_layers
+        .extend(root_layers.instruction_layers.clone());
+    merged.skill_layers.extend(root_layers.skill_layers.clone());
+
+    visiting.pop();
+
+    Ok(merged)
 }
 
 #[derive(Debug)]

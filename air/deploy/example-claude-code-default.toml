@@ -1,16 +1,17 @@
 schema = "air.distribution.v1"
 description = "Compose a default global prompt for Claude Code with shared and capability-specific layers."
 
+imports = [
+  "common-capabilities.toml",
+]
+
 instruction_layers = [
   "base-prompt.md",
   "example-claude-code-agent-product-prompt.md",
-  "rg-capability-prompt.md",
-  "shell-capability-prompt.md",
 ]
 
 skill_layers = [
   "quiz-professor",
-  "source-code-learning-coach",
 ]
 
 [targets]
