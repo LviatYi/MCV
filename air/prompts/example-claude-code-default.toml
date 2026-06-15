@@ -11,9 +11,3 @@ layers = [
 
 [targets]
 product = "claude-code"
-scope = "global"
-
-[rules]
-format = "markdown-concatenate"
-separator = "\n\n"
-deduplicate_headings = false
