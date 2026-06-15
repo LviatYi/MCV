@@ -95,7 +95,6 @@ struct ResolvedConfig {
 struct Targets {
     product: Product,
     scope: Option<ScopeInArg>,
-    output_path: Option<PathBuf>,
     workspace_path: Option<PathBuf>,
 }
 
@@ -371,10 +370,6 @@ fn resolve_instruction_output_path(
     args: &ApplyArgs,
 ) -> Result<PathBuf> {
     if let Some(output) = &args.output {
-        return Ok(output.clone());
-    }
-
-    if let Some(output) = &targets.output_path {
         return Ok(output.clone());
     }
 
