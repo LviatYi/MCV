@@ -127,7 +127,7 @@ impl Product {
         Ok(match (self, scope) {
             (_, Scope::Global) => home_dir()?.join(self.global_config_dir_name()),
             (_, Scope::Workspace(root)) => root.join(self.proj_config_dir_name()),
-        }.join("skills"))
+        }.join("../air/skills"))
     }
 }
 
@@ -191,7 +191,7 @@ fn apply(args: ApplyArgs) -> Result<()> {
     } else {
         Some(compose_instruction_layers(&config, config_dir)?)
     };
-    let skills_root = air_root_dir(config_dir)?.join("skills");
+    let skills_root = air_root_dir(config_dir)?.join("../air/skills");
     let selected_skills = resolve_skill_sources(&config.skill_layers, &skills_root)?;
 
     if args.dry_run {
@@ -355,7 +355,7 @@ fn home_dir() -> Result<PathBuf> {
 }
 
 fn default_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("../air"))
 }
 
 fn air_root_dir(config_dir: &Path) -> Result<PathBuf> {
