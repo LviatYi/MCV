@@ -1,12 +1,16 @@
-schema = "air.prompt-composition.v1"
+schema = "air.distribution.v1"
 name = "copilot-default"
 description = "Compose a default repository instruction file for GitHub Copilot."
 
-layers = [
+instruction_layers = [
     "base-prompt.md",
     "example-copilot-agent-product-prompt.md",
     "rg-capability-prompt.md",
     "shell-capability-prompt.md",
+]
+
+skill_layers = [
+    "quiz-professor",
 ]
 
 [targets]

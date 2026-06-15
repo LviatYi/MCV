@@ -1,12 +1,17 @@
-schema = "air.prompt-composition.v1"
+schema = "air.distribution.v1"
 name = "codex-default"
 description = "Compose a default global prompt for Codex with shared and capability-specific layers."
 
-layers = [
+instruction_layers = [
   "base-prompt.md",
   "example-codex-agent-product-prompt.md",
   "rg-capability-prompt.md",
   "shell-capability-prompt.md",
+]
+
+skill_layers = [
+  "quiz-professor",
+  "source-code-learning-coach",
 ]
 
 [targets]

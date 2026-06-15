@@ -1,13 +1,19 @@
-schema = "air.prompt-composition.v1"
+schema = "air.distribution.v1"
 name = "claude-code-default"
 description = "Compose a default global prompt for Claude Code with shared and capability-specific layers."
 
-layers = [
+instruction_layers = [
   "base-prompt.md",
   "example-claude-code-agent-product-prompt.md",
   "rg-capability-prompt.md",
   "shell-capability-prompt.md",
 ]
 
+skill_layers = [
+  "quiz-professor",
+  "source-code-learning-coach",
+]
+
 [targets]
-product = "claude-code"
+product = "claude"
+scope = "global"
