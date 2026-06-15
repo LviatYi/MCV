@@ -1,5 +1,4 @@
 schema = "air.distribution.v1"
-name = "claude-code-default"
 description = "Compose a default global prompt for Claude Code with shared and capability-specific layers."
 
 instruction_layers = [

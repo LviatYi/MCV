@@ -1,5 +1,4 @@
 schema = "air.distribution.v1"
-name = "codex-default"
 description = "Compose a default global prompt for Codex with shared and capability-specific layers."
 
 instruction_layers = [

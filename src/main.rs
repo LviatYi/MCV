@@ -44,6 +44,9 @@ struct ApplyArgs {
     config: PathBuf,
 
     #[arg(long)]
+    assets_dir: PathBuf,
+
+    #[arg(long)]
     workspace: Option<PathBuf>,
 
     #[arg(long)]
@@ -91,28 +94,16 @@ impl Product {
         }
     }
 
-    fn global_config_dir_name(&self) -> &'static str {
-        match self {
-            Product::Codex => { ".codex" }
-            Product::Claude => { ".claude" }
-            Product::Copilot => { ".copilot" }
-        }
-    }
-
-    fn proj_config_dir_name(&self) -> &'static str {
-        match self {
-            Product::Codex => { ".agents" }
-            Product::Claude => { ".claude" }
-            Product::Copilot => { ".github" }
-        }
-    }
-
     pub fn instruction_file_path(&self, scope: &Scope) -> Result<PathBuf> {
         Ok(match (self, scope) {
-            (_, Scope::Global) => home_dir()?
-                .join(self.global_config_dir_name()),
-            (_, Scope::Workspace(root)) => root.clone(),
-        }.join(self.instruction_file_name()))
+            (Product::Codex, Scope::Global) => home_dir()?.join(".codex"),
+            (Product::Claude, Scope::Global) => home_dir()?.join(".claude"),
+            (Product::Copilot, Scope::Global) => home_dir()?.join(".copilot"),
+            (Product::Codex, Scope::Workspace(root)) => root.clone(),
+            (Product::Claude, Scope::Workspace(root)) => root.clone(),
+            (Product::Copilot, Scope::Workspace(root)) => root.join(".github"),
+        }
+        .join(self.instruction_file_name()))
     }
 
     pub fn instruction_file_name(&self) -> &'static str {
@@ -125,9 +116,14 @@ impl Product {
 
     pub fn skills_root_path(&self, scope: &Scope) -> Result<PathBuf> {
         Ok(match (self, scope) {
-            (_, Scope::Global) => home_dir()?.join(self.global_config_dir_name()),
-            (_, Scope::Workspace(root)) => root.join(self.proj_config_dir_name()),
-        }.join("../air/skills"))
+            (Product::Codex, Scope::Global) => home_dir()?.join(".agents"),
+            (Product::Claude, Scope::Global) => home_dir()?.join(".claude"),
+            (Product::Copilot, Scope::Global) => home_dir()?.join(".copilot"),
+            (Product::Codex, Scope::Workspace(root)) => root.join(".agents"),
+            (Product::Claude, Scope::Workspace(root)) => root.join(".claude"),
+            (Product::Copilot, Scope::Workspace(root)) => root.join(".github"),
+        }
+        .join("skills"))
     }
 }
 
@@ -166,13 +162,20 @@ struct Rules {
 fn apply(args: ApplyArgs) -> Result<()> {
     let config_path = fs::canonicalize(&args.config)
         .with_context(|| format!("failed to resolve config path: {}", args.config.display()))?;
-    let config_dir = config_path
-        .parent()
-        .context("config path does not have a parent directory")?;
+    let config_name = config_path.file_stem();
+    let assets_dir = fs::canonicalize(&args.assets_dir).with_context(|| {
+        format!(
+            "failed to resolve assets directory: {}",
+            args.assets_dir.display()
+        )
+    })?;
     let raw = fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read config: {}", config_path.display()))?;
-    let config: CompositionConfig = toml::from_str(&raw)
+    let mut config: CompositionConfig = toml::from_str(&raw)
         .with_context(|| format!("failed to parse config: {}", config_path.display()))?;
+    config.name = config_name
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
 
     validate_config(&config)?;
 
@@ -183,19 +186,24 @@ fn apply(args: ApplyArgs) -> Result<()> {
     let instruction_output_path = if config.instruction_layers.is_empty() {
         None
     } else {
-        Some(resolve_instruction_output_path(&config.targets, &scope, &args)?)
+        Some(resolve_instruction_output_path(
+            &config.targets,
+            &scope,
+            &args,
+        )?)
     };
     let skills_output_root = resolve_skills_output_root(&config.targets, &scope)?;
     let instruction_content = if config.instruction_layers.is_empty() {
         None
     } else {
-        Some(compose_instruction_layers(&config, config_dir)?)
+        Some(compose_instruction_layers(&config, &assets_dir)?)
     };
-    let skills_root = air_root_dir(config_dir)?.join("../air/skills");
+    let skills_root = assets_dir.join("skills");
     let selected_skills = resolve_skill_sources(&config.skill_layers, &skills_root)?;
 
     if args.dry_run {
         println!("Config: {}", config_path.display());
+        println!("Assets Dir: {}", assets_dir.display());
         println!("Name: {}", config.name);
         if let Some(description) = &config.description {
             println!("Description: {description}");
@@ -225,7 +233,8 @@ fn apply(args: ApplyArgs) -> Result<()> {
         return Ok(());
     }
 
-    if let (Some(content), Some(instruction_output_path)) = (instruction_content, instruction_output_path)
+    if let (Some(content), Some(instruction_output_path)) =
+        (instruction_content, instruction_output_path)
     {
         let parent = instruction_output_path
             .parent()
@@ -255,7 +264,11 @@ fn apply(args: ApplyArgs) -> Result<()> {
         for skill in &selected_skills {
             let destination = skills_output_root.join(&skill.name);
             copy_skill_dir(&skill.source_path, &destination)?;
-            println!("Distributed skill {} to {}", skill.name, destination.display());
+            println!(
+                "Distributed skill {} to {}",
+                skill.name,
+                destination.display()
+            );
         }
     }
 
@@ -280,7 +293,7 @@ fn validate_config(config: &CompositionConfig) -> Result<()> {
     Ok(())
 }
 
-fn compose_instruction_layers(config: &CompositionConfig, config_dir: &Path) -> Result<String> {
+fn compose_instruction_layers(config: &CompositionConfig, assets_dir: &Path) -> Result<String> {
     let separator = config
         .rules
         .as_ref()
@@ -289,7 +302,16 @@ fn compose_instruction_layers(config: &CompositionConfig, config_dir: &Path) -> 
 
     let mut parts = Vec::with_capacity(config.instruction_layers.len());
     for layer in &config.instruction_layers {
-        let layer_path = config_dir.join(layer);
+        let layer_path = assets_dir.join("instructions").join(layer);
+        if !layer_path.is_file() {
+            warn(&format!(
+                "instruction layer '{}' is missing at {}, skipping",
+                layer,
+                layer_path.display()
+            ));
+            continue;
+        }
+
         let content = fs::read_to_string(&layer_path)
             .with_context(|| format!("failed to read layer: {}", layer_path.display()))?;
         parts.push(indent_markdown_headings(content.trim()));
@@ -355,14 +377,7 @@ fn home_dir() -> Result<PathBuf> {
 }
 
 fn default_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("../air"))
-}
-
-fn air_root_dir(config_dir: &Path) -> Result<PathBuf> {
-    config_dir
-        .parent()
-        .map(Path::to_path_buf)
-        .context("instruction config directory does not have an AIR root parent")
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 #[derive(Debug)]
@@ -371,24 +386,41 @@ struct SelectedSkill {
     source_path: PathBuf,
 }
 
-fn resolve_skill_sources(skill_layers: &[String], skills_root: &Path) -> Result<Vec<SelectedSkill>> {
+fn resolve_skill_sources(
+    skill_layers: &[String],
+    skills_root: &Path,
+) -> Result<Vec<SelectedSkill>> {
     let mut skills = Vec::with_capacity(skill_layers.len());
 
     for layer in skill_layers {
         let source_path = skills_root.join(layer);
         if !source_path.is_dir() {
-            bail!("skill layer '{}' does not resolve to a directory", layer);
+            warn(&format!(
+                "skill layer '{}' is missing at {}, skipping",
+                layer,
+                source_path.display()
+            ));
+            continue;
         }
 
         let name = source_path
             .file_name()
             .and_then(|name| name.to_str())
             .map(str::to_string)
-            .with_context(|| format!("failed to determine skill name for {}", source_path.display()))?;
+            .with_context(|| {
+                format!(
+                    "failed to determine skill name for {}",
+                    source_path.display()
+                )
+            })?;
         skills.push(SelectedSkill { name, source_path });
     }
 
     Ok(skills)
+}
+
+fn warn(message: &str) {
+    eprintln!("warning: {message}");
 }
 
 fn copy_skill_dir(source: &Path, destination: &Path) -> Result<()> {
@@ -411,11 +443,15 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry in fs::read_dir(source)
         .with_context(|| format!("failed to read directory: {}", source.display()))?
     {
-        let entry = entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
+        let entry =
+            entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
         let file_type = entry.file_type().with_context(|| {
-            format!("failed to determine file type for {}", source_path.display())
+            format!(
+                "failed to determine file type for {}",
+                source_path.display()
+            )
         })?;
 
         if file_type.is_dir() {
