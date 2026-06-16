@@ -1,2 +1,3 @@
 ai-agent/skills/.system
 target
+**/.private/**
