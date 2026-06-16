@@ -45,7 +45,7 @@ struct ApplyArgs {
     config: PathBuf,
 
     #[arg(long)]
-    assets_dir: PathBuf,
+    air_assets_dir: PathBuf,
 
     #[arg(long)]
     workspace: Option<PathBuf>,
@@ -183,10 +183,10 @@ struct Rules {
 fn apply(args: ApplyArgs) -> Result<()> {
     let config_path = fs::canonicalize(&args.config)
         .with_context(|| format!("failed to resolve config path: {}", args.config.display()))?;
-    let assets_dir = fs::canonicalize(&args.assets_dir).with_context(|| {
+    let air_assets_dir = fs::canonicalize(&args.air_assets_dir).with_context(|| {
         format!(
             "failed to resolve assets directory: {}",
-            args.assets_dir.display()
+            args.air_assets_dir.display()
         )
     })?;
     let config = load_resolved_config(&config_path)?;
@@ -211,14 +211,14 @@ fn apply(args: ApplyArgs) -> Result<()> {
     let instruction_content = if config.layers.instruction_layers.is_empty() {
         None
     } else {
-        Some(compose_instruction_layers(&config, &assets_dir)?)
+        Some(compose_instruction_layers(&config, &air_assets_dir)?)
     };
-    let skills_root = assets_dir.join("skills");
+    let skills_root = air_assets_dir.join("skills");
     let selected_skills = resolve_skill_sources(&config.layers.skill_layers, &skills_root)?;
 
     if args.dry_run {
         println!("Config: {}", config_path.display());
-        println!("Assets Dir: {}", assets_dir.display());
+        println!("Assets Dir: {}", air_assets_dir.display());
         println!("Name: {}", config.header.name);
         if let Some(description) = &config.header.description {
             println!("Description: {description}");
@@ -312,7 +312,7 @@ fn validate_config(config: &ResolvedConfig) -> Result<()> {
     Ok(())
 }
 
-fn compose_instruction_layers(config: &ResolvedConfig, assets_dir: &Path) -> Result<String> {
+fn compose_instruction_layers(config: &ResolvedConfig, air_assets_dir: &Path) -> Result<String> {
     let separator = config
         .header
         .rules
@@ -322,7 +322,7 @@ fn compose_instruction_layers(config: &ResolvedConfig, assets_dir: &Path) -> Res
 
     let mut parts = Vec::with_capacity(config.layers.instruction_layers.len());
     for layer in &config.layers.instruction_layers {
-        let layer_path = assets_dir.join("instructions").join(layer);
+        let layer_path = air_assets_dir.join("instructions").join(layer);
         if !layer_path.is_file() {
             warn(&format!(
                 "instruction layer '{}' is missing at {}, skipping",
