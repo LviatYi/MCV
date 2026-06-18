@@ -452,6 +452,11 @@ fn resolve_imported_layers(
         .parent()
         .context("config path does not have a parent directory")?;
 
+    merged
+        .instruction_layers
+        .extend(root_layers.instruction_layers.clone());
+    merged.skill_layers.extend(root_layers.skill_layers.clone());
+
     for import in &root_layers.imports {
         let import_path = config_dir.join(import);
         if !import_path.exists() {
@@ -471,11 +476,6 @@ fn resolve_imported_layers(
             .extend(imported_layers.instruction_layers);
         merged.skill_layers.extend(imported_layers.skill_layers);
     }
-
-    merged
-        .instruction_layers
-        .extend(root_layers.instruction_layers.clone());
-    merged.skill_layers.extend(root_layers.skill_layers.clone());
 
     visiting.pop();
 
