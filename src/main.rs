@@ -1,6 +1,6 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -41,18 +41,23 @@ enum AirCommand {
 
 #[derive(Debug, Parser)]
 struct ApplyArgs {
+    /// Path to the AIR deployment TOML config to apply.
     #[arg(short, long)]
     config: PathBuf,
 
+    /// Root directory that contains AIR instruction layers and skill assets.
     #[arg(long)]
     air_assets_dir: PathBuf,
 
+    /// Override the target workspace when deploying workspace-scoped assets.
     #[arg(long)]
     workspace: Option<PathBuf>,
 
+    /// Override the generated instruction file output path.
     #[arg(long)]
     output: Option<PathBuf>,
 
+    /// Print the resolved deployment plan without writing files.
     #[arg(long)]
     dry_run: bool,
 }
@@ -303,7 +308,6 @@ fn validate_config(config: &ResolvedConfig) -> Result<()> {
     }
 
     if let Some(schema) = &config.header.schema
-        && schema != "air.distribution.v1"
         && schema != "air.prompt-composition.v1"
     {
         bail!("unsupported schema '{}'", schema);
@@ -415,8 +419,8 @@ fn load_resolved_config(config_path: &Path) -> Result<ResolvedConfig> {
 fn load_config_file(path: &Path) -> Result<ConfigFile> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read config: {}", path.display()))?;
-    let mut config: ConfigFile =
-        toml::from_str(&raw).with_context(|| format!("failed to parse config: {}", path.display()))?;
+    let mut config: ConfigFile = toml::from_str(&raw)
+        .with_context(|| format!("failed to parse config: {}", path.display()))?;
     config.header.name = path
         .file_stem()
         .map(|name| name.to_string_lossy().to_string())

@@ -1,4 +1,4 @@
-schema = "air.distribution.v1"
+schema = "air.prompt-composition.v1"
 description = "Compose a default repository instruction file for GitHub Copilot."
 
 instruction_layers = [

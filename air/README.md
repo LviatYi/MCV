@@ -17,6 +17,41 @@ Skill 资产具有 `Public` 与 `Private` 两种可见性。可见性是资产�
 
 ## [Deploy Section](./deploy)
 
+通过定义一项 toml 配置，用户可将 AIR 资产部署到本地环境中。配置案例参考：
+
+- [example-codex-default](./deploy/example-codex-default.toml)
+- [example-claude-code-default](./deploy/example-claude-code-default.toml)
+- [example-copilot-default](./deploy/example-copilot-default.toml)
+
+toml 配置支持以下能力：
+
+- `schema` 声明配置格式版本，目前最新支持 `air.prompt-composition.v1`。
+- `description` 记录配置用途，便于在 dry run 输出中确认当前部署内容。
+- `imports` 引入同目录下的其它 toml 配置，并合并其 `instruction_layers` 与 `skill_layers`。循环引用会被跳过。
+- `instruction_layers` 按顺序组合 `air/instructions` 下的 Markdown prompt layer，生成目标 AI 工具的指令文件。
+- `skill_layers` 选择 `air/skills` 下的 Skill 目录，并分发到目标 AI 工具的 skills 目录。
+- `[targets]` 指定目标产品与作用域：
+  - `product` 支持 `codex`、`claude`、`copilot`。
+  - `scope` 支持 `global` 与 `workspace`，缺省时为 `global`。
+  - `workspace_path` 可在 toml 中指定 workspace 部署目录；命令行 `--workspace` 可覆盖该值。
+- `[rules] separator` 指定多个 instruction layer 之间的拼接分隔符。
+
+mcv air cli 运行案例：
+
+```powershell
+# 预览 Codex 全局部署计划，不写入文件
+mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir air --dry-run
+
+# 将 Codex 默认 AIR 资产部署到当前用户的全局 Codex 环境
+mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir air
+
+# 将 Claude Code AIR 资产部署到指定 workspace
+mcv air apply --config air/deploy/example-claude-code-default.toml --air-assets-dir air --workspace D:\Workspace\ExampleProject
+
+# 只覆盖 instruction 文件输出位置，skills 仍按目标产品与作用域分发
+mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir air --output D:\Workspace\ExampleProject\AGENTS.md
+```
+
 ## Best Practice Guide
 
 ### 优先使用稳定工具执行重复动作
