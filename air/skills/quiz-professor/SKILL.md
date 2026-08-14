@@ -1,6 +1,6 @@
 ---
 name: quiz-professor
-description: Diagnostic quiz and active-recall workflow for testing understanding with judgment questions, true/false questions, misconception traps, short-answer prompts, answer keys, explanations, and difficulty progression. Use when the user asks for quiz questions, 判断题, self-checks, exercises, comprehension tests, active recall, learning assessment, or when another learning workflow needs to close a lesson by verifying understanding.
+description: Enabled only when the user explicitly uses the skill! Diagnostic quiz and active-recall workflow for testing understanding with judgment questions, true/false questions, misconception traps, short-answer prompts, answer keys, explanations, and difficulty progression. Use when the user asks for quiz questions, 判断题, self-checks, exercises, comprehension tests, active recall, learning assessment, or when another learning workflow needs to close a lesson by verifying understanding.
 ---
 
 # Quiz Professor
