@@ -15,7 +15,9 @@ skill_layers = [
 
 [targets]
 product = "codex"
-scope = "global"
+
+[targets.scope]
+type = "global"
 
 [rules]
 separator = "\n\n"

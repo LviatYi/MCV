@@ -32,8 +32,8 @@ toml 配置支持以下能力：
 - `skill_layers` 选择 `air/skills` 下的 Skill 目录，并分发到目标 AI 工具的 skills 目录。
 - `[targets]` 指定目标产品与作用域：
   - `product` 支持 `codex`、`claude`、`copilot`。
-  - `scope` 支持 `global` 与 `workspace`，缺省时为 `global`。
-  - `workspace_path` 可在 toml 中指定 workspace 部署目录；命令行 `--workspace` 可覆盖该值。
+  - `[targets.scope] type` 必须显式指定为 `global` 或 `workspace`。
+  - `workspace` 作用域必须同时通过 `[targets.scope] path` 指定部署目录。
 - `[rules] separator` 指定多个 instruction layer 之间的拼接分隔符。
 
 mcv air cli 运行案例：
@@ -45,8 +45,8 @@ mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir ai
 # 将 Codex 默认 AIR 资产部署到当前用户的全局 Codex 环境
 mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir air
 
-# 将 Claude Code AIR 资产部署到指定 workspace
-mcv air apply --config air/deploy/example-claude-code-default.toml --air-assets-dir air --workspace D:\Workspace\ExampleProject
+# 按配置中的 targets.scope 将 Copilot AIR 资产部署到指定 workspace
+mcv air apply --config air/deploy/example-copilot-default.toml --air-assets-dir air
 
 # 只覆盖 instruction 文件输出位置，skills 仍按目标产品与作用域分发
 mcv air apply --config air/deploy/example-codex-default.toml --air-assets-dir air --output D:\Workspace\ExampleProject\AGENTS.md

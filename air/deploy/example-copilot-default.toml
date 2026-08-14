@@ -14,7 +14,10 @@ skill_layers = [
 
 [targets]
 product = "copilot"
-scope = "workspace"
+
+[targets.scope]
+type = "workspace"
+path = "C:/Workspace/ExampleProject"
 
 [rules]
 separator = "\n\n"

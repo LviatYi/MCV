@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use serde::Deserialize;
 
 fn main() -> Result<()> {
@@ -48,10 +48,6 @@ struct ApplyArgs {
     /// Root directory that contains AIR instruction layers and skill assets.
     #[arg(long)]
     air_assets_dir: PathBuf,
-
-    /// Override the target workspace when deploying workspace-scoped assets.
-    #[arg(long)]
-    workspace: Option<PathBuf>,
 
     /// Override the generated instruction file output path.
     #[arg(long)]
@@ -99,11 +95,10 @@ struct ResolvedConfig {
 #[derive(Clone, Debug, Deserialize)]
 struct Targets {
     product: Product,
-    scope: Option<ScopeInArg>,
-    workspace_path: Option<PathBuf>,
+    scope: Scope,
 }
 
-#[derive(Clone, Debug, Deserialize, ValueEnum)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum Product {
     Codex,
@@ -125,9 +120,9 @@ impl Product {
             (Product::Codex, Scope::Global) => home_dir()?.join(".codex"),
             (Product::Claude, Scope::Global) => home_dir()?.join(".claude"),
             (Product::Copilot, Scope::Global) => home_dir()?.join(".copilot"),
-            (Product::Codex, Scope::Workspace(root)) => root.clone(),
-            (Product::Claude, Scope::Workspace(root)) => root.clone(),
-            (Product::Copilot, Scope::Workspace(root)) => root.join(".github"),
+            (Product::Codex, Scope::Workspace { path }) => path.clone(),
+            (Product::Claude, Scope::Workspace { path }) => path.clone(),
+            (Product::Copilot, Scope::Workspace { path }) => path.join(".github"),
         }
         .join(self.instruction_file_name()))
     }
@@ -145,39 +140,19 @@ impl Product {
             (Product::Codex, Scope::Global) => home_dir()?.join(".agents"),
             (Product::Claude, Scope::Global) => home_dir()?.join(".claude"),
             (Product::Copilot, Scope::Global) => home_dir()?.join(".copilot"),
-            (Product::Codex, Scope::Workspace(root)) => root.join(".agents"),
-            (Product::Claude, Scope::Workspace(root)) => root.join(".claude"),
-            (Product::Copilot, Scope::Workspace(root)) => root.join(".github"),
+            (Product::Codex, Scope::Workspace { path }) => path.join(".agents"),
+            (Product::Claude, Scope::Workspace { path }) => path.join(".claude"),
+            (Product::Copilot, Scope::Workspace { path }) => path.join(".github"),
         }
         .join("skills"))
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, ValueEnum)]
-#[serde(rename_all = "kebab-case")]
-enum ScopeInArg {
-    #[default]
-    Global,
-    Workspace,
-}
-
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 enum Scope {
-    #[default]
     Global,
-    Workspace(PathBuf),
-}
-
-impl From<Targets> for Scope {
-    fn from(value: Targets) -> Self {
-        match value.scope {
-            Some(ScopeInArg::Global) | None => Scope::Global,
-            Some(ScopeInArg::Workspace) => {
-                let workspace_path = value.workspace_path.unwrap_or_else(default_working_dir);
-                Scope::Workspace(workspace_path)
-            }
-        }
-    }
+    Workspace { path: PathBuf },
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -203,16 +178,13 @@ fn apply(args: ApplyArgs) -> Result<()> {
         .targets
         .as_ref()
         .context("root config must declare [targets]")?;
-    let scope = match args.workspace.clone() {
-        Some(root) => Scope::Workspace(root),
-        None => Scope::from(targets.clone()),
-    };
+    let scope = &targets.scope;
     let instruction_output_path = if config.layers.instruction_layers.is_empty() {
         None
     } else {
-        Some(resolve_instruction_output_path(targets, &scope, &args)?)
+        Some(resolve_instruction_output_path(targets, scope, &args)?)
     };
-    let skills_output_root = resolve_skills_output_root(targets, &scope)?;
+    let skills_output_root = resolve_skills_output_root(targets, scope)?;
     let instruction_content = if config.layers.instruction_layers.is_empty() {
         None
     } else {
@@ -396,10 +368,6 @@ fn home_dir() -> Result<PathBuf> {
     bail!("failed to determine user home directory")
 }
 
-fn default_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
 fn load_resolved_config(config_path: &Path) -> Result<ResolvedConfig> {
     let root_file = load_config_file(config_path)?;
 
@@ -579,4 +547,45 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_scope_requires_path() {
+        let error = toml::from_str::<Targets>(
+            r#"
+product = "codex"
+
+[scope]
+type = "workspace"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("missing field `path`"));
+    }
+
+    #[test]
+    fn workspace_scope_contains_configured_path() {
+        let targets = toml::from_str::<Targets>(
+            r#"
+product = "copilot"
+
+[scope]
+type = "workspace"
+path = "C:/Workspace/ExampleProject"
+"#,
+        )
+        .unwrap();
+
+        match targets.scope {
+            Scope::Workspace { path } => {
+                assert_eq!(path, PathBuf::from("C:/Workspace/ExampleProject"));
+            }
+            Scope::Global => panic!("expected workspace scope"),
+        }
+    }
 }

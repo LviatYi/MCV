@@ -16,4 +16,6 @@ skill_layers = [
 
 [targets]
 product = "claude"
-scope = "global"
+
+[targets.scope]
+type = "global"
