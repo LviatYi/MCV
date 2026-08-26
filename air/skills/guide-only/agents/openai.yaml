@@ -1,0 +1,7 @@
+interface:
+  display_name: "Guide Only"
+  short_description: "Give concise steps for the user to execute"
+  default_prompt: "Use $guide-only to tell me how to solve this myself."
+
+policy:
+  allow_implicit_invocation: false
